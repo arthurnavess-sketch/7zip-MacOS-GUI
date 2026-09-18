@@ -1,0 +1,6 @@
+# Fixado em 0.22.0: a partir da série 1.1.x, o py7zr passou a depender de
+# "backports-zstd", um namespace package sem __init__.py que quebra o
+# py2app (erro "ImportError: No module named 'backports'" durante o
+# build). A 0.22.0 usa "pyzstd" em vez disso e não tem esse problema.
+py7zr==0.22.0
+py2app>=0.28.8
