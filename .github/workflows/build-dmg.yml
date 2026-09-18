@@ -49,7 +49,7 @@ jobs:
       - name: Compilar o .app com PyInstaller
         run: |
           set -euxo pipefail
-          pyinstaller "${APP_NAME}.spec" --noconfirm --clean
+          pyton3 -m Pyinstaller "${APP_NAME}.spec" --noconfirm --clean
 
       - name: Inspecionar o resultado do build
         run: |
