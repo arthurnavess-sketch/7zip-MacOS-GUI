@@ -14,16 +14,18 @@ jobs:
     runs-on: macos-15-intel
 
     env:
-      # Ajuste para a versão mínima de macOS que você quer suportar.
-      # 10.13 (High Sierra, 2017) é um bom equilíbrio entre alcance e
-      # compatibilidade com o Python moderno. Versões mais antigas que
-      # isso não são mais suportadas pelos instaladores oficiais do Python.
-      MACOSX_DEPLOYMENT_TARGET: "10.13"
       APP_NAME: "7ZipGUI"
+      MACOSX_DEPLOYMENT_TARGET: "10.13"
 
     steps:
       - name: Checkout do repositório
         uses: actions/checkout@v4
+
+      - name: Confirmar qual versão do workflow está rodando
+        run: |
+          echo "Commit: ${GITHUB_SHA}"
+          echo "Arquivos do repositório:"
+          ls -la
 
       - name: Configurar Python (x86_64)
         uses: actions/setup-python@v5
@@ -33,27 +35,61 @@ jobs:
 
       - name: Instalar dependências
         run: |
+          set -euxo pipefail
           python3 -m pip install --upgrade pip
           python3 -m pip install -r requirements.txt
+          python3 -m pip list
 
-      - name: Compilar o .app com py2app
+      - name: Testar se o app importa corretamente
         run: |
-          python3 setup.py py2app
+          set -euxo pipefail
+          # Falha cedo se py7zr não estiver funcional, antes de empacotar.
+          python3 -c "import py7zr; print('py7zr', py7zr.__version__)"
 
-      - name: Verificar arquitetura do binário gerado
+      - name: Compilar o .app com PyInstaller
         run: |
-          file "dist/${APP_NAME}.app/Contents/MacOS/${APP_NAME}"
+          set -euxo pipefail
+          pyinstaller "${APP_NAME}.spec" --noconfirm --clean
+
+      - name: Inspecionar o resultado do build
+        run: |
+          set -euxo pipefail
+          echo "=== Conteúdo de dist/ ==="
+          ls -la dist/
+          echo "=== Bundles .app encontrados ==="
+          find dist -maxdepth 1 -name '*.app' -print
+
+      - name: Verificar o bundle e a arquitetura
+        run: |
+          set -euo pipefail
+          APP_PATH="dist/${APP_NAME}.app"
+          if [ ! -d "$APP_PATH" ]; then
+            echo "ERRO: $APP_PATH não existe. Conteúdo de dist/:"
+            ls -la dist/ || true
+            exit 1
+          fi
+          BIN="$APP_PATH/Contents/MacOS/${APP_NAME}"
+          if [ ! -f "$BIN" ]; then
+            echo "ERRO: executável não encontrado em $BIN. Conteúdo:"
+            ls -la "$APP_PATH/Contents/MacOS/" || true
+            exit 1
+          fi
+          file "$BIN"
+          lipo -info "$BIN" || true
 
       - name: Assinar o app (ad-hoc, sem conta de desenvolvedor)
         run: |
+          set -euxo pipefail
           # Assinatura ad-hoc evita o erro "app está danificado" no Gatekeeper.
-          # Não elimina o aviso de "desenvolvedor não identificado" — para
-          # isso é necessária uma conta paga da Apple Developer Program e
-          # notarização, fora do escopo deste workflow gratuito.
+          # Não elimina o aviso de "desenvolvedor não identificado" — isso
+          # exigiria conta paga da Apple Developer Program e notarização.
           codesign --force --deep --sign - "dist/${APP_NAME}.app"
+          codesign --verify --verbose "dist/${APP_NAME}.app" || true
 
       - name: Criar o .dmg
         run: |
+          set -euxo pipefail
+          rm -rf dist/dmg-src
           mkdir -p dist/dmg-src
           cp -R "dist/${APP_NAME}.app" "dist/dmg-src/"
           ln -s /Applications "dist/dmg-src/Applications"
@@ -61,12 +97,24 @@ jobs:
             -srcfolder "dist/dmg-src" \
             -ov -format UDZO \
             "dist/${APP_NAME}.dmg"
+          ls -lh "dist/${APP_NAME}.dmg"
 
       - name: Publicar o .dmg como artefato do workflow
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.APP_NAME }}-dmg
           path: dist/${{ env.APP_NAME }}.dmg
+
+      - name: Publicar logs de diagnóstico se algo falhar
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostico-build
+          path: |
+            build/
+            dist/
+          retention-days: 3
+          if-no-files-found: ignore
 
       - name: Criar Release do GitHub (somente em tags v*)
         if: startsWith(github.ref, 'refs/tags/v')
