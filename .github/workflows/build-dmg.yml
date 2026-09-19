@@ -28,30 +28,43 @@ jobs:
           ls -la
 
       - name: Configurar Python (x86_64)
+        id: setup_python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           architecture: "x64"
 
       - name: Instalar dependências
+        env:
+          PYTHON: ${{ steps.setup_python.outputs.python-path }}
         run: |
           set -euxo pipefail
-          python3 -m pip install --upgrade pip
-          python3 -m pip install -r requirements.txt
-          python3 -m pip list
+          # Usa SEMPRE o interpretador exato do setup-python. O comando
+          # "python3" pode apontar para outro Python instalado no runner,
+          # fazendo o pip instalar num lugar e o build procurar em outro.
+          echo "Interpretador usado: $PYTHON"
+          "$PYTHON" --version
+          "$PYTHON" -m pip install --upgrade pip
+          "$PYTHON" -m pip install -r requirements.txt
+          # Garante o PyInstaller mesmo que o requirements.txt esteja
+          # desatualizado no repositório.
+          "$PYTHON" -m pip install "pyinstaller>=6.10"
+          "$PYTHON" -m pip list
 
-      - name: Testar se o app importa corretamente
+      - name: Testar as dependências antes de empacotar
+        env:
+          PYTHON: ${{ steps.setup_python.outputs.python-path }}
         run: |
           set -euxo pipefail
-          # Falha cedo se py7zr não estiver funcional, antes de empacotar.
-          python3 -c "import py7zr; print('py7zr', py7zr.__version__)"
+          "$PYTHON" -c "import py7zr; print('py7zr', py7zr.__version__)"
+          "$PYTHON" -c "import PyInstaller; print('PyInstaller', PyInstaller.__version__)"
 
       - name: Compilar o .app com PyInstaller
+        env:
+          PYTHON: ${{ steps.setup_python.outputs.python-path }}
         run: |
           set -euxo pipefail
-          # Chamado como módulo do Python: o executável "pyinstaller"
-          # nem sempre está no PATH do runner, mas o módulo sempre funciona.
-          python3 -m PyInstaller "${APP_NAME}.spec" --noconfirm --clean
+          "$PYTHON" -m PyInstaller "${APP_NAME}.spec" --noconfirm --clean
 
       - name: Inspecionar o resultado do build
         run: |
