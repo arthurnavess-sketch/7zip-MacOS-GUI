@@ -49,7 +49,9 @@ jobs:
       - name: Compilar o .app com PyInstaller
         run: |
           set -euxo pipefail
-          pyinstaller "${APP_NAME}.spec" --noconfirm --clean
+          # Chamado como módulo do Python: o executável "pyinstaller"
+          # nem sempre está no PATH do runner, mas o módulo sempre funciona.
+          python3 -m PyInstaller "${APP_NAME}.spec" --noconfirm --clean
 
       - name: Inspecionar o resultado do build
         run: |
